@@ -148,7 +148,7 @@ export default {
         /* If date_a's (e.g. march 1st) day of the month is smaller than date_b (e.g. february 28th),
         adjust the month difference */
         if (date_a.getDate() < date_b.getDate()) {
-            months--;
+            //months--;
         }
 
         // Calculate years based on actual months
