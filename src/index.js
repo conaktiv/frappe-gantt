@@ -7,9 +7,9 @@ import Popup from './popup';
 
 import { DEFAULT_OPTIONS, DEFAULT_VIEW_MODES } from './defaults';
 
-import './styles/gantt.css';
-
 export default class Gantt {
+    occupiedLanes = {};
+
     constructor(wrapper, tasks, options) {
         this.setup_wrapper(wrapper);
         this.setup_options(options);
@@ -243,13 +243,9 @@ export default class Gantt {
     }
 
     change_view_mode(mode = this.options.view_mode, maintain_pos = false) {
-        const name = typeof mode === 'string' ? mode : mode.name;
-        const custom_mode =
-            this.options.view_modes.find((d) => d.name === name) || {};
-        const default_mode =
-            DEFAULT_VIEW_MODES.find((d) => d.name === name) || {};
-        mode = { ...default_mode, ...custom_mode };
-
+        if (typeof mode === 'string') {
+            mode = this.options.view_modes.find((d) => d.name === mode);
+        }
         let old_pos, old_scroll_op;
         if (maintain_pos) {
             old_pos = this.$container.scrollLeft;
@@ -416,16 +412,23 @@ export default class Gantt {
     }
 
     make_grid_background() {
+        let calcHeight;
+
+        if (this.options.container_height === 'auto') {
+            calcHeight = 0;
+        } else if (this.options.container_height === 'fit') {
+            calcHeight = 0;
+        } else {
+            calcHeight = this.options.container_height;
+        }
+
         const grid_width = this.dates.length * this.config.column_width;
         const grid_height = Math.max(
             this.config.header_height +
                 this.options.padding +
                 (this.options.bar_height + this.options.padding) *
-                    this.tasks.length -
-                10,
-            this.options.container_height !== 'auto'
-                ? this.options.container_height
-                : 0,
+                    this.tasks.length - 10,
+                calcHeight,
         );
 
         createSVG('rect', {
@@ -444,6 +447,8 @@ export default class Gantt {
         this.grid_height = grid_height;
         if (this.options.container_height === 'auto')
             this.$container.style.height = grid_height + 'px';
+        if (this.options.container_height === 'fit')
+            this.$container.style.height = '100%';
     }
 
     make_grid_rows() {
@@ -895,6 +900,37 @@ export default class Gantt {
     }
 
     make_arrows() {
+        this.arrows = [];
+
+        for (let task of this.tasks) {
+            let arrows = [];
+
+            for (const dep of task.dependencies) {
+                const dependencies = dep.split(';');
+
+                for (const dependency of dependencies) {
+                    const depDef  = dependency.split('|');
+                    const depTask = this.get_task(depDef[0]);
+                    const arrow   = new Arrow(
+                        this.occupiedLanes,
+                        this,
+                        this.bars[depTask._index], // from_task
+                        this.bars[task._index], // to_task
+                        depDef[1] || 'EA', // type
+                        depDef[2] || 0 // Abstand in Tagen
+                    );
+                    this.layers.arrow.appendChild(arrow.element);
+                    arrows.push(arrow);
+                }
+            }
+
+            if (arrows.length > 0) {
+                this.arrows = this.arrows.concat(arrows);
+            }
+        }
+    }
+
+    make_arrows_ori() {
         this.arrows = [];
         for (let task of this.tasks) {
             let arrows = [];

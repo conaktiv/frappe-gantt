@@ -1,8 +1,24 @@
+import { ceil } from 'lodash';
 import { createSVG } from './svg_utils';
 
 export default class Arrow {
-    constructor(gantt, from_task, to_task) {
+
+    abstandInTagen;
+    arrowPadding;
+    arrowSize;
+    depType;
+    from_task;
+    gantt;
+    occupiedLanes;
+    to_task;
+
+    constructor(occupiedLanes, gantt, from_task, to_task, depType, abstandInTagen) {
+        this.abstandInTagen = abstandInTagen;
+        this.arrowPadding = 10;
+        this.arrowSize = 5;
+        this.depType        = depType;
         this.gantt = gantt;
+        this.occupiedLanes = occupiedLanes;
         this.from_task = from_task;
         this.to_task = to_task;
 
@@ -10,7 +26,245 @@ export default class Arrow {
         this.draw();
     }
 
+    setOccupiedLane(laneName, start_x, end_x, hWidth) {
+        let laneOffset = 0;
+        let occupiedLaneOffset = Math.floor(start_x);
+
+        if (end_x < start_x) {
+            laneOffset         = start_x - end_x;
+            occupiedLaneOffset = Math.floor(end_x);
+        } else if (end_x > start_x) {
+            occupiedLaneOffset = Math.floor(start_x);
+        }
+
+        for (const occupiedLane in this.occupiedLanes) {
+            if (occupiedLane !== laneName) {
+                if (Math.floor(parseFloat(this.occupiedLanes[occupiedLane])) === occupiedLaneOffset) {
+                    hWidth += 4;
+                }
+            }
+        }
+
+        this.occupiedLanes[laneName] = occupiedLaneOffset;
+
+        return {
+            hWidth:     hWidth,
+            laneOffset: laneOffset
+        };
+    }
+
     calculate_path() {
+        if (this.depType === 'EA') {
+            this.calculatePathEA();
+        } else if (this.depType === 'AE') {
+            this.calculatePathAE();
+        } else if (this.depType === 'AA') {
+            this.calculatePathAA();
+        } else if (this.depType === 'EE') {
+            this.calculatePathEE();
+        }
+    }
+
+    calculatePathAA() {
+        const clockwise = this.from_task.task._index > this.to_task.task._index ? 1 : 0;
+        const start_x   = this.from_task.$bar.getX();
+        const laneName  = `lane-${this.from_task.task._index}-${this.to_task.task._index}`;
+        const end_x     = this.to_task.$bar.getX();
+
+        let hWidth  = this.arrowPadding;
+        let start_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
+            this.gantt.options.padding - 16;
+
+        // Termin-Abstände einbeziehen
+        //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
+
+        // Lane-Belegung
+        const laneOffsets = this.setOccupiedLane(
+            laneName,
+            start_x,
+            end_x,
+            hWidth
+        );
+
+        const curve  = this.gantt.options.arrow_curve;
+        const curveY = clockwise ? -curve : curve;
+        const offset = this.to_task.$bar.getY() +
+            this.to_task.$bar.getHeight() / 2 -
+            curveY;
+
+        this.path = `
+            M ${start_x} ${start_y}
+            h -${laneOffsets.hWidth + laneOffsets.laneOffset}
+            a ${curve} ${curve} 0 0 ${clockwise} -${curve} ${curveY}
+            V ${offset}
+            a ${curve} ${curve} 0 0 ${clockwise} ${curve} ${curveY}
+            h ${laneOffsets.hWidth + (end_x > start_x ? end_x - start_x : 0)}
+            m -${this.arrowSize} -${this.arrowSize}
+            l ${this.arrowSize} ${this.arrowSize}
+            l -${this.arrowSize} ${this.arrowSize}`;
+    }
+
+    calculatePathAE() {
+        const clockwise = this.from_task.task._index > this.to_task.task._index ? 1 : 0;
+        const start_x   = this.from_task.$bar.getX() + this.arrowPadding + 3;
+        const laneName  = `lane-${this.from_task.task._index}-${this.to_task.task._index}`;
+        const end_x     = this.to_task.$bar.getX() + this.to_task.$bar.getWidth();
+
+        let hWidth  = this.arrowPadding;
+        let start_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
+            this.gantt.options.padding - 3;
+
+        // Termin-Abstände einbeziehen
+        //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
+
+        // Lane-Belegung
+        this.setOccupiedLane(
+            laneName,
+            start_x,
+            end_x,
+            hWidth
+        );
+
+        const curve  = this.gantt.options.arrow_curve;
+        const curveY = clockwise ? -curve : curve;
+        let offset = this.to_task.$bar.getY() +
+            this.to_task.$bar.getHeight() / 2 -
+            curveY;
+
+        if (end_x <= start_x) {
+            this.path = `
+                M ${start_x} ${start_y}
+                V ${offset}
+                a ${curve} ${curve} 0 0 ${clockwise ? 0 : 1} -${curve} ${curveY}
+                H ${end_x}
+                m ${this.arrowSize} -${this.arrowSize}
+                l -${this.arrowSize} ${this.arrowSize}
+                l ${this.arrowSize} ${this.arrowSize}`;
+        } else {
+            offset -= (this.gantt.options.padding + this.gantt.options.bar_height);
+
+            this.path = `
+                M ${start_x} ${start_y}
+                V ${offset}
+                a ${curve} ${curve} 0 0 0 ${curve} ${curveY}
+                H ${end_x + this.arrowPadding}
+                a ${curve} ${curve} 0 0 1 ${curve} ${curveY}
+                v ${this.gantt.options.padding + this.gantt.options.bar_height - 6}
+                a ${curve} ${curve} 0 0 1 -${curve} ${curveY}
+                H ${end_x}
+                m ${this.arrowSize} -${this.arrowSize}
+                l -${this.arrowSize} ${this.arrowSize}
+                l ${this.arrowSize} ${this.arrowSize}`;
+        }
+    }
+
+    calculatePathEA() {
+        const clockwise = this.from_task.task._index > this.to_task.task._index ? 1 : 0;
+        const start_x   = this.from_task.$bar.getX() + this.from_task.$bar.getWidth() - this.arrowPadding;
+        const laneName  = `lane-${this.from_task.task._index}-${this.to_task.task._index}`;
+        const end_x     = this.to_task.$bar.getX();
+
+        let hWidth  = this.arrowPadding;
+        let start_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
+            this.gantt.options.padding - 3;
+
+        // Termin-Abstände einbeziehen
+        //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
+
+        // Lane-Belegung
+        this.setOccupiedLane(
+            laneName,
+            start_x,
+            end_x,
+            hWidth
+        );
+
+        const end_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height / 2 +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.to_task.task._index +
+            this.gantt.options.padding/* +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * termineDistance*/;
+        const curve  = this.gantt.options.arrow_curve;
+        const curveY = clockwise ? -curve : curve;
+        let offset = this.to_task.$bar.getY() +
+            this.to_task.$bar.getHeight() / 2 -
+            curveY;
+
+        if (start_x <= end_x) {
+            this.path = `
+                M ${start_x} ${start_y}
+                V ${offset}
+                a ${curve} ${curve} 0 0 ${clockwise ? 1 : 0} ${clockwise ? -curve : curve} ${curveY}
+                H ${end_x}
+                m -${this.arrowSize} -${this.arrowSize}
+                l ${this.arrowSize} ${this.arrowSize}
+                l -${this.arrowSize} ${this.arrowSize}`;
+        } else {
+            offset -= (this.gantt.options.padding + this.gantt.options.bar_height);
+
+            this.path = `
+                M ${start_x} ${start_y}
+                V ${offset - 4}
+                a ${curve} ${curve} 0 0 ${clockwise ? 0 : 1} ${clockwise ? 0 : -curve} ${curveY}
+                H ${end_x - this.arrowSize - this.arrowSize}
+                a ${curve} ${curve} 0 0 0 -${curve} 0
+                v ${this.gantt.options.padding + this.gantt.options.bar_height - 2}
+                a ${curve} ${curve} 0 0 0 ${curve} 0
+                h ${this.arrowPadding}
+                m -${this.arrowSize} -${this.arrowSize}
+                l ${this.arrowSize} ${this.arrowSize}
+                l -${this.arrowSize} ${this.arrowSize}`;
+        }
+    }
+
+    calculatePathEE() {
+        const clockwise = this.from_task.task._index > this.to_task.task._index ? 1 : 0;
+        const start_x   = this.from_task.$bar.getX() + this.from_task.$bar.getWidth();
+        const laneName  = `lane-${this.from_task.task._index}-${this.to_task.task._index}`;
+        const end_x     = this.to_task.$bar.getX()+ this.to_task.$bar.getWidth();
+
+        let hWidth  = this.arrowPadding;
+        let start_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
+            this.gantt.options.padding - 3;
+
+        // Termin-Abstände einbeziehen
+        //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
+
+        // Lane-Belegung
+        const laneOffsets = this.setOccupiedLane(
+            laneName,
+            start_x,
+            end_x,
+            hWidth
+        );
+
+        const curve  = this.gantt.options.arrow_curve;
+        const curveY = clockwise ? -curve : curve;
+        const offset = this.to_task.$bar.getY() +
+            this.to_task.$bar.getHeight() / 2 -
+            curveY;
+
+        this.path = `
+            M ${start_x} ${start_y}
+            h ${hWidth + (end_x > start_x ? end_x - start_x : 0)}
+            a ${curve} ${curve} 0 0 ${clockwise ? 0 : 1} ${curve} ${curveY}
+            V ${offset}
+            a ${curve} ${curve} 0 0 ${clockwise ? 0 : 1} -${curve} ${curveY}
+            h -${hWidth + laneOffsets.laneOffset}
+            m ${this.arrowSize} -${this.arrowSize}
+            l -${this.arrowSize} ${this.arrowSize}
+            l ${this.arrowSize} ${this.arrowSize}`;
+    }
+
+    calculate_path_ori() {
         let start_x =
             this.from_task.$bar.getX() + this.from_task.$bar.getWidth() / 2;
 
