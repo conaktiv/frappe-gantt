@@ -1,5 +1,5 @@
 {
-    "name": "frappe-gantt",
+    "name": "conaktiv-frappe-gantt",
     "version": "1.2.2",
     "description": "A simple, modern, interactive gantt library for the web",
     "main": "src/index.js",
@@ -13,7 +13,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/frappe/gantt.git"
+        "url": "git+https://github.com/conaktiv/frappe-gantt.git"
     },
     "files": [
         "src",
@@ -28,19 +28,14 @@
         }
     },
     "keywords": [
-        "gantt",
-        "svg",
-        "simple gantt",
-        "project timeline",
-        "interactive gantt",
-        "project management"
+        "conaktiv",
     ],
-    "author": "Faris Ansari",
+    "author": "Sascha Stumm, Faris Ansari",
     "license": "MIT",
     "bugs": {
         "url": "https://github.com/frappe/gantt/issues"
     },
-    "homepage": "https://github.com/frappe/gantt",
+    "homepage": "https://github.com/conaktiv/frappe-gantt",
     "devDependencies": {
         "eslint": "^9.15.0",
         "eslint-config-prettier": "^2.9.0",
