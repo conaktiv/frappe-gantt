@@ -30,10 +30,10 @@
     "keywords": [
         "conaktiv",
     ],
-    "author": "Sascha Stumm, Faris Ansari",
+    "author": "Sascha Stumm",
     "license": "MIT",
     "bugs": {
-        "url": "https://github.com/frappe/gantt/issues"
+        "url": "https://github.com/conaktiv/frappe-gantt/issues"
     },
     "homepage": "https://github.com/conaktiv/frappe-gantt",
     "devDependencies": {
