@@ -10,7 +10,10 @@ import { DEFAULT_OPTIONS, DEFAULT_VIEW_MODES } from './defaults';
 export default class Gantt {
     occupiedLanes = {};
 
+    isViewMode = true;
+
     constructor(wrapper, tasks, options) {
+        this.isViewMode = options.isViewMode || false;
         this.setup_wrapper(wrapper);
         this.setup_options(options);
         this.setup_tasks(tasks);
@@ -361,7 +364,9 @@ export default class Gantt {
     bind_events() {
         this.bind_grid_click();
         this.bind_holiday_labels();
-        this.bind_bar_events();
+        if (this.isViewMode === false) {
+            this.bind_bar_events();
+        }
     }
 
     render() {

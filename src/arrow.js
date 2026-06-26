@@ -213,7 +213,7 @@ export default class Arrow {
                 V ${offset - 4}
                 a ${curve} ${curve} 0 0 ${clockwise ? 0 : 1} ${clockwise ? 0 : -curve} ${curveY}
                 H ${end_x - this.arrowSize - this.arrowSize}
-                a ${curve} ${curve} 0 0 0 -${curve} 0
+                a ${curve} ${curve} 0 0 0 1 0
                 v ${this.gantt.options.padding + this.gantt.options.bar_height - 2}
                 a ${curve} ${curve} 0 0 0 ${curve} 0
                 h ${this.arrowPadding}
