@@ -398,7 +398,7 @@ export default class Bar {
                     });
                 this.gantt.$container
                     .querySelector(`.highlight-${task_id}`)
-                    .classList.remove('hide');
+                    ?.classList.remove('hide');
             }, 200);
         });
         $.on(this.group, 'mouseleave', () => {
@@ -407,7 +407,7 @@ export default class Bar {
                 this.gantt.popup?.hide?.();
             this.gantt.$container
                 .querySelector(`.highlight-${task_id}`)
-                .classList.add('hide');
+                ?.classList.add('hide');
         });
 
         $.on(this.group, 'click', () => {

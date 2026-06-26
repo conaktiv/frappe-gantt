@@ -364,6 +364,8 @@ export default class Gantt {
     bind_events() {
         this.bind_grid_click();
         this.bind_holiday_labels();
+        this.bind_scroll_events();
+
         if (this.isViewMode === false) {
             this.bind_bar_events();
         }
@@ -1146,10 +1148,107 @@ export default class Gantt {
         return [min_start, max_start, max_end];
     }
 
+    bind_scroll_events() {
+        let x_on_scroll_start = 0;
+
+        $.on(this.$container, 'scroll', (e) => {
+            let localBars = [];
+            const ids = this.bars.map(({ group }) =>
+                group.getAttribute('data-id'),
+            );
+            let dx;
+            if (x_on_scroll_start) {
+                dx = e.currentTarget.scrollLeft - x_on_scroll_start;
+            }
+
+            // Calculate current scroll position's upper text
+            this.current_date = date_utils.add(
+                this.gantt_start,
+                (e.currentTarget.scrollLeft / this.config.column_width) *
+                    this.config.step,
+                this.config.unit,
+            );
+
+            let current_upper = this.config.view_mode.upper_text(
+                this.current_date,
+                null,
+                this.options.language,
+            );
+            let $el = this.upperTexts.find(
+                (el) => el.textContent === current_upper,
+            );
+
+            // Recalculate for smoother experience
+            this.current_date = date_utils.add(
+                this.gantt_start,
+                ((e.currentTarget.scrollLeft + $el.clientWidth) /
+                    this.config.column_width) *
+                    this.config.step,
+                this.config.unit,
+            );
+            current_upper = this.config.view_mode.upper_text(
+                this.current_date,
+                null,
+                this.options.language,
+            );
+            $el = this.upperTexts.find(
+                (el) => el.textContent === current_upper,
+            );
+
+            if ($el !== this.$current) {
+                if (this.$current)
+                    this.$current.classList.remove('current-upper');
+
+                $el.classList.add('current-upper');
+                this.$current = $el;
+            }
+
+            x_on_scroll_start = e.currentTarget.scrollLeft;
+            let [min_start, max_start, max_end] =
+                this.get_start_end_positions();
+
+            if (x_on_scroll_start > max_end + 100) {
+                this.$adjust.innerHTML = '&larr;';
+                this.$adjust.classList.remove('hide');
+                this.$adjust.onclick = () => {
+                    this.$container.scrollTo({
+                        left: max_start,
+                        behavior: 'smooth',
+                    });
+                };
+            } else if (
+                x_on_scroll_start + e.currentTarget.offsetWidth <
+                min_start - 100
+            ) {
+                this.$adjust.innerHTML = '&rarr;';
+                this.$adjust.classList.remove('hide');
+                this.$adjust.onclick = () => {
+                    this.$container.scrollTo({
+                        left: min_start,
+                        behavior: 'smooth',
+                    });
+                };
+            } else {
+                this.$adjust.classList.add('hide');
+            }
+
+            if (dx) {
+                localBars = ids.map((id) => this.get_bar(id));
+                if (this.options.auto_move_label) {
+                    localBars.forEach((bar) => {
+                        bar.update_label_position_on_horizontal_scroll({
+                            x: dx,
+                            sx: e.currentTarget.scrollLeft,
+                        });
+                    });
+                }
+            }
+        });
+    }
+
     bind_bar_events() {
         let is_dragging = false;
         let x_on_start = 0;
-        let x_on_scroll_start = 0;
         let is_resizing_left = false;
         let is_resizing_right = false;
         let parent_bar_id = null;
@@ -1261,100 +1360,6 @@ export default class Gantt {
                 }
             });
         }
-
-        $.on(this.$container, 'scroll', (e) => {
-            let localBars = [];
-            const ids = this.bars.map(({ group }) =>
-                group.getAttribute('data-id'),
-            );
-            let dx;
-            if (x_on_scroll_start) {
-                dx = e.currentTarget.scrollLeft - x_on_scroll_start;
-            }
-
-            // Calculate current scroll position's upper text
-            this.current_date = date_utils.add(
-                this.gantt_start,
-                (e.currentTarget.scrollLeft / this.config.column_width) *
-                    this.config.step,
-                this.config.unit,
-            );
-
-            let current_upper = this.config.view_mode.upper_text(
-                this.current_date,
-                null,
-                this.options.language,
-            );
-            let $el = this.upperTexts.find(
-                (el) => el.textContent === current_upper,
-            );
-
-            // Recalculate for smoother experience
-            this.current_date = date_utils.add(
-                this.gantt_start,
-                ((e.currentTarget.scrollLeft + $el.clientWidth) /
-                    this.config.column_width) *
-                    this.config.step,
-                this.config.unit,
-            );
-            current_upper = this.config.view_mode.upper_text(
-                this.current_date,
-                null,
-                this.options.language,
-            );
-            $el = this.upperTexts.find(
-                (el) => el.textContent === current_upper,
-            );
-
-            if ($el !== this.$current) {
-                if (this.$current)
-                    this.$current.classList.remove('current-upper');
-
-                $el.classList.add('current-upper');
-                this.$current = $el;
-            }
-
-            x_on_scroll_start = e.currentTarget.scrollLeft;
-            let [min_start, max_start, max_end] =
-                this.get_start_end_positions();
-
-            if (x_on_scroll_start > max_end + 100) {
-                this.$adjust.innerHTML = '&larr;';
-                this.$adjust.classList.remove('hide');
-                this.$adjust.onclick = () => {
-                    this.$container.scrollTo({
-                        left: max_start,
-                        behavior: 'smooth',
-                    });
-                };
-            } else if (
-                x_on_scroll_start + e.currentTarget.offsetWidth <
-                min_start - 100
-            ) {
-                this.$adjust.innerHTML = '&rarr;';
-                this.$adjust.classList.remove('hide');
-                this.$adjust.onclick = () => {
-                    this.$container.scrollTo({
-                        left: min_start,
-                        behavior: 'smooth',
-                    });
-                };
-            } else {
-                this.$adjust.classList.add('hide');
-            }
-
-            if (dx) {
-                localBars = ids.map((id) => this.get_bar(id));
-                if (this.options.auto_move_label) {
-                    localBars.forEach((bar) => {
-                        bar.update_label_position_on_horizontal_scroll({
-                            x: dx,
-                            sx: e.currentTarget.scrollLeft,
-                        });
-                    });
-                }
-            }
-        });
 
         $.on(this.$svg, 'mousemove', (e) => {
             if (!action_in_progress()) return;
