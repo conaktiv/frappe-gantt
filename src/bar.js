@@ -103,6 +103,7 @@ export default class Bar {
 
     draw() {
         this.draw_bar();
+        this.draw_childInfo();
         this.draw_progress_bar();
         if (this.gantt.options.show_expected_progress) {
             this.prepare_expected_progress_values();
@@ -132,6 +133,20 @@ export default class Bar {
 
         if (this.invalid) {
             this.$bar.classList.add('bar-invalid');
+        }
+    }
+
+    draw_childInfo() {
+        if (this.task._hasChildren) {
+            this.$childInfo = createSVG('rect', {
+                x:         this.x,
+                y:         this.y,
+                rx:        this.corner_radius,
+                ry:        this.corner_radius,
+                width:     this.width,
+                class:     'bar-child-indicator',
+                append_to: this.bar_group
+            });
         }
     }
 
@@ -434,10 +449,42 @@ export default class Bar {
         });
     }
 
-    update_bar_position({ x = null, width = null }) {
+    update_bar_position({ x = null, width = null, isResize = false, isParentResizeLeft = false, isParentResizeRight = false  }) {
         const bar = this.$bar;
 
         if (x) {
+            for (const dependency of this.task.dependencies) {
+                const depDefinitions = dependency.split(';');
+
+                for (const depDefinition of depDefinitions) {
+                    const depElems   = depDefinition.split('|');
+                    const parentX    = this.gantt.get_bar(depElems[0]).$bar.getX();
+                    const parentEndX = this.gantt.get_bar(depElems[0]).$bar.getEndX();
+
+                    if (
+                        depElems[0] === 'AA' ||
+                        depElems[0] === 'EA'
+                    ) {
+                        if (isParentResizeRight) {
+                            return false;
+                        }
+                        if (x >= parentX) {
+                            return false;
+                        }
+                    } else {
+                        if (isParentResizeLeft) {
+                            return false;
+                        }
+                        if (
+                            isParentResizeRight &&
+                            parentEndX > bar.getEndX()
+                        ) {
+                            //return false;
+                        }
+                    }
+                }
+            }
+
             const xs = this.task.dependencies.map((dep) => {
                 const depElems = dep.split('|');
                 return this.gantt.get_bar(depElems[0]).$bar.getX();
@@ -455,9 +502,12 @@ export default class Bar {
             this.$date_highlight.style.width = width + 'px';
         }
 
+        if (this.task._hasChildren) {
+            this.update_childInfo_position();
+        }
         this.update_label_position();
         this.update_handle_position();
-        this.date_changed();
+        //this.date_changed();
         this.compute_duration();
 
         if (this.gantt.options.show_expected_progress) {
@@ -466,6 +516,14 @@ export default class Bar {
 
         this.update_progressbar_position();
         this.update_arrow_position();
+    }
+
+    update_childInfo_position() {
+        const bar       = this.$bar;
+        const childInfo = this.group.querySelector('.bar-child-indicator');
+
+        childInfo.setAttribute('x',     bar.getX());
+        childInfo.setAttribute('width', this.$bar.getWidth());
     }
 
     update_label_position_on_horizontal_scroll({ x, sx }) {

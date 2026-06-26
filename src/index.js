@@ -1154,6 +1154,8 @@ export default class Gantt {
         const action_in_progress = () =>
             is_dragging || is_resizing_left || is_resizing_right;
 
+        let updateChildren;
+
         this.$svg.onclick = (e) => {
             if (e.target.classList.contains('grid-row')) this.unselect_all();
         };
@@ -1172,6 +1174,7 @@ export default class Gantt {
         });
 
         $.on(this.$svg, 'mousedown', '.bar-wrapper, .handle', (e, element) => {
+            updateChildren = true;
             const bar_wrapper = $.closest('.bar-wrapper', element);
             if (element.classList.contains('left')) {
                 is_resizing_left = true;
@@ -1358,19 +1361,26 @@ export default class Gantt {
                 this.hide_popup();
                 if (is_resizing_left) {
                     if (parent_bar_id === bar.task.id) {
-                        bar.update_bar_position({
+                        updateChildren = bar.update_bar_position({
                             x: $bar.ox + $bar.finaldx,
                             width: $bar.owidth - $bar.finaldx,
+                            isResize: true
                         });
-                    } else {
-                        bar.update_bar_position({
+                    } else if (updateChildren) {
+                        updateChildren = bar.update_bar_position({
                             x: $bar.ox + $bar.finaldx,
                         });
                     }
                 } else if (is_resizing_right) {
                     if (parent_bar_id === bar.task.id) {
-                        bar.update_bar_position({
+                        updateChildren = bar.update_bar_position({
                             width: $bar.owidth + $bar.finaldx,
+                            isResize: true
+                        });
+                    } else if (updateChildren) {
+                        updateChildren = bar.update_bar_position({
+                            x:                   $bar.ox + $bar.finaldx,
+                            isParentResizeRight: true
                         });
                     }
                 } else if (
