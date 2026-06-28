@@ -200,7 +200,7 @@ export default class Arrow {
             this.path = `
                 M ${start_x} ${start_y}
                 V ${offset}
-                a ${curve} ${curve} 0 0 ${clockwise ? 1 : 0} ${clockwise ? -curve : curve} ${curveY}
+                a ${curve} ${curve} 0 0 ${clockwise ? 1 : 0} ${clockwise ? curve : curve} ${curveY}
                 H ${end_x}
                 m -${this.arrowSize} -${this.arrowSize}
                 l ${this.arrowSize} ${this.arrowSize}
