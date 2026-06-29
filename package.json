@@ -1,6 +1,6 @@
 {
     "name": "conaktiv-frappe-gantt",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "description": "A simple, modern, interactive gantt library for the web",
     "main": "src/index.js",
     "type": "module",
