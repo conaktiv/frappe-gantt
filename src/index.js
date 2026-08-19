@@ -811,7 +811,7 @@ export default class Gantt {
             if (date.lower_text) {
                 let $lower_text = this.create_el({
                     left: date.x,
-                    top: date.lower_y,
+                    top: 0,
                     classes: 'lower-text date_' + sanitize(date.formatted_date),
                     append_to: this.$lower_header,
                 });
