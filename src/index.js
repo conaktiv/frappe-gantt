@@ -4,6 +4,7 @@ import { $, createSVG } from './svg_utils';
 import Arrow from './arrow';
 import Bar from './bar';
 import Popup from './popup';
+import DragPopup from './drag_popup';
 
 import { DEFAULT_OPTIONS, DEFAULT_VIEW_MODES } from './defaults';
 
@@ -11,6 +12,8 @@ export default class Gantt {
     occupiedLanes = {};
 
     isViewMode = true;
+    drag_popup_left;
+    drag_popup_right;
 
     constructor(wrapper, tasks, options) {
         this.isViewMode = options.isViewMode || false;
@@ -132,6 +135,13 @@ export default class Gantt {
             }
         } else {
             this.config.ignored_function = this.options.ignore;
+        }
+
+        if (
+            this.options.formatDate
+            && typeof this.options.formatDate === 'function'
+        ) {
+            this.config.formatDate = this.options.formatDate;
         }
     }
 
@@ -1290,6 +1300,15 @@ export default class Gantt {
                 is_dragging = true;
             }
 
+            this.$drag_popup_wrapper_left = this.create_el({
+                classes: 'drag-popup-wrapper',
+                append_to: this.$container,
+            });
+            this.$drag_popup_wrapper_right = this.create_el({
+                classes: 'drag-popup-wrapper',
+                append_to: this.$container,
+            });
+
             if (this.popup) this.popup.hide();
 
             x_on_start = e.offsetX || e.layerX;
@@ -1362,7 +1381,10 @@ export default class Gantt {
         }
 
         $.on(this.$svg, 'mousemove', (e) => {
-            if (!action_in_progress()) return;
+            if (!action_in_progress()) {
+
+                return;
+            }
             const dx = (e.offsetX || e.layerX) - x_on_start;
 
             bars.forEach((bar) => {
@@ -1381,6 +1403,17 @@ export default class Gantt {
                             x: $bar.ox + $bar.finaldx,
                         });
                     }
+
+                    let { new_start_date, new_end_date } = bar.compute_start_end_date();
+                    new_end_date = date_utils.add(new_end_date, -1, 'second');
+                    
+                    this.show_drag_popup_left({
+                        x: $bar.ox + $bar.finaldx,
+                        y: $bar.getY(),
+                        task: this.task,
+                        target: $bar,
+                        startDate: this.config.formatDate ? this.config.formatDate(new_start_date) : new_start_date,
+                    });
                 } else if (is_resizing_right) {
                     if (parent_bar_id === bar.task.id) {
                         updateChildren = bar.update_bar_position({
@@ -1393,12 +1426,40 @@ export default class Gantt {
                             isParentResizeRight: true
                         });
                     }
+
+                    let { new_start_date, new_end_date } = bar.compute_start_end_date();
+                    new_end_date = date_utils.add(new_end_date, -1, 'second');
+
+                    this.show_drag_popup_right({
+                        x: $bar.ox + $bar.owidth + $bar.finaldx,
+                        y: $bar.getY(),
+                        task: this.task,
+                        target: $bar,
+                        startDate: this.config.formatDate ? this.config.formatDate(new_end_date) : new_end_date,
+                    });
                 } else if (
                     is_dragging &&
                     !this.options.readonly &&
                     !this.options.readonly_dates
                 ) {
                     bar.update_bar_position({ x: $bar.ox + $bar.finaldx });
+                    let { new_start_date, new_end_date } = bar.compute_start_end_date();
+                    new_end_date = date_utils.add(new_end_date, -1, 'second');
+                    
+                    this.show_drag_popup_left({
+                        x: $bar.ox + $bar.finaldx,
+                        y: $bar.getY(),
+                        task: this.task,
+                        target: $bar,
+                        startDate: this.config.formatDate ? this.config.formatDate(new_start_date) : new_start_date,
+                    });
+                    this.show_drag_popup_right({
+                        x: $bar.ox + $bar.finaldx + $bar.getWidth(),
+                        y: $bar.getY(),
+                        task: this.task,
+                        target: $bar,
+                        startDate: this.config.formatDate ? this.config.formatDate(new_end_date) : new_end_date,
+                    });
                 }
             });
         });
@@ -1407,6 +1468,8 @@ export default class Gantt {
             is_dragging = false;
             is_resizing_left = false;
             is_resizing_right = false;
+            this.hide_drag_popup_left();
+            this.hide_drag_popup_right();
             this.$container
                 .querySelector('.visible')
                 ?.classList?.remove?.('visible');
@@ -1617,6 +1680,35 @@ export default class Gantt {
 
     hide_popup() {
         this.popup && this.popup.hide();
+    }
+
+    show_drag_popup_left(opts) {
+        if (!this.drag_popup_left) {
+            this.drag_popup_left = new DragPopup(
+                this.$drag_popup_wrapper_left,
+                this,
+                'left'
+            );
+        }
+        this.drag_popup_left.show(opts);
+    }
+    show_drag_popup_right(opts) {
+        if (!this.drag_popup_right) {
+            this.drag_popup_right = new DragPopup(
+                this.$drag_popup_wrapper_right,
+                this,
+                'right'
+            );
+        }
+        this.drag_popup_right.show(opts);
+    }
+
+    hide_drag_popup_left() {
+       this.drag_popup_left && this.drag_popup_left.hide();
+    }
+
+    hide_drag_popup_right() {
+        this.drag_popup_right && this.drag_popup_right.hide();
     }
 
     trigger_event(event, args) {
