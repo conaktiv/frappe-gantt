@@ -2,6 +2,8 @@ import date_utils from './date_utils';
 import { $, createSVG, animateSVG } from './svg_utils';
 
 export default class Bar {
+    isTargetForEndDependency = false;
+
     constructor(gantt, task) {
         this.set_defaults(gantt, task);
         this.prepare_wrappers();
@@ -28,6 +30,11 @@ export default class Bar {
         this.gantt = gantt;
         this.task = task;
         this.name = this.name || '';
+        this.isTargetForEndDependency = false;
+    }
+
+    setIsTargetForEndDependency(state) {
+        this.isTargetForEndDependency = state;
     }
 
     prepare_wrappers() {
@@ -458,8 +465,13 @@ export default class Bar {
 
                 for (const depDefinition of depDefinitions) {
                     const depElems   = depDefinition.split('|');
-                    const parentX    = this.gantt.get_bar(depElems[0]).$bar.getX();
-                    const parentEndX = this.gantt.get_bar(depElems[0]).$bar.getEndX();
+                    const depBar = this.gantt.get_bar(depElems[0]);
+
+                    if (!depBar) {
+                        continue;
+                    }
+                    const parentX    = depBar.$bar.getX();
+                    const parentEndX = depBar.$bar.getEndX();
 
                     if (
                         depElems[0] === 'AA' ||
@@ -487,15 +499,24 @@ export default class Bar {
 
             const xs = this.task.dependencies.map((dep) => {
                 const depElems = dep.split('|');
-                return this.gantt.get_bar(depElems[0]).$bar.getX();
+                const depBar = this.gantt.get_bar(depElems[0]);
+
+                if (depBar) {
+                    return depBar.$bar.getX();
+                } else {
+                    return false;
+                }
             });
-            const valid_x = xs.reduce((prev, curr) => {
-                return prev && x >= curr;
-            }, true);
-            if (!valid_x) return;
-            this.update_attr(bar, 'x', x);
-            this.x = x;
-            this.$date_highlight.style.left = x + 'px';
+
+            if (xs !== false) {
+                const valid_x = xs.reduce((prev, curr) => {
+                    return prev && x >= curr;
+                }, true);
+                if (!valid_x) return;
+                this.update_attr(bar, 'x', x);
+                this.x = x;
+                this.$date_highlight.style.left = x + 'px';
+            }
         }
         if (width > 0) {
             this.update_attr(bar, 'width', width);
@@ -688,7 +709,6 @@ export default class Bar {
     compute_duration() {
         let actual_duration_in_days = 0,
             duration_in_days = 0;
-        // console.log(this.task._start, this.task._end);
         for (
             let d = new Date(this.task._start);
             d < this.task._end;
@@ -764,6 +784,33 @@ export default class Bar {
         const labelWidth = label.getBBox().width;
         const barWidth = bar.getWidth();
         if (labelWidth > barWidth) {
+            // Wenn Abhängigkeit zum Ende der Position besteht, dann hier
+            // zusätzlichen Abstand einfügen
+            let hasEndDep = false;
+            for (const dep of this.task.dependencies) {
+                const dependencies = dep.split(';');
+
+                for (const dependency of dependencies) {
+                    const depDef = dependency.split('|');
+                    if (depDef.length > 1) {
+                        if (
+                            depDef[1] === 'EE'
+                            || depDef[1] === 'AE'
+                        ) {
+                            hasEndDep = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (
+                hasEndDep
+                || this.isTargetForEndDependency
+            ) {
+                padding += 20;
+            }
+
             label.classList.add('big');
             if (img) {
                 img.setAttribute('x', bar.getEndX() + padding);

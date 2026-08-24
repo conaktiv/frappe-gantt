@@ -7,6 +7,7 @@ import Popup from './popup';
 import DragPopup from './drag_popup';
 
 import { DEFAULT_OPTIONS, DEFAULT_VIEW_MODES } from './defaults';
+import { ceil } from 'lodash';
 
 export default class Gantt {
     occupiedLanes = {};
@@ -928,16 +929,39 @@ export default class Gantt {
                 for (const dependency of dependencies) {
                     const depDef  = dependency.split('|');
                     const depTask = this.get_task(depDef[0]);
-                    const arrow   = new Arrow(
-                        this.occupiedLanes,
-                        this,
-                        this.bars[depTask._index], // from_task
-                        this.bars[task._index], // to_task
-                        depDef[1] || 'EA', // type
-                        depDef[2] || 0 // Abstand in Tagen
-                    );
-                    this.layers.arrow.appendChild(arrow.element);
-                    arrows.push(arrow);
+
+                    if (depTask) {
+                        if (
+                            depDef[1] === 'EA'
+                            || depDef[1] === 'EE'
+                        ) {
+                            // Damit Labels rechts neben der Bar ausgerückt werden
+                            this.bars[depTask._index].setIsTargetForEndDependency(true);
+                        }
+
+                        const arrow   = new Arrow(
+                            this.occupiedLanes,
+                            this,
+                            this.bars[depTask._index], // from_task
+                            this.bars[task._index], // to_task
+                            depDef[1] || 'EA', // type
+                            depDef[2] || 0 // Abstand in Tagen
+                        );
+                        this.layers.arrow.appendChild(arrow.element);
+                        arrows.push(arrow);
+                    } else {
+                        // Kann vorkommen, wenn die Position, auf die verwiesen wird, zugeklappt ist
+                        const arrow   = new Arrow(
+                            this.occupiedLanes,
+                            this,
+                            undefined, // from_task
+                            this.bars[task._index], // to_task
+                            depDef[1] || 'EA', // type
+                            depDef[2] || 0 // Abstand in Tagen
+                        );
+                        this.layers.arrow.appendChild(arrow.element);
+                        arrows.push(arrow);
+                    }
                 }
             }
 
@@ -972,7 +996,7 @@ export default class Gantt {
         for (let bar of this.bars) {
             bar.arrows = this.arrows.filter((arrow) => {
                 return (
-                    arrow.from_task.task.id === bar.task.id ||
+                    arrow.from_task?.task.id === bar.task.id ||
                     arrow.to_task.task.id === bar.task.id
                 );
             });
@@ -1329,11 +1353,13 @@ export default class Gantt {
             pos = x_on_start;
 
             bars.forEach((bar) => {
-                const $bar = bar.$bar;
-                $bar.ox = $bar.getX();
-                $bar.oy = $bar.getY();
-                $bar.owidth = $bar.getWidth();
-                $bar.finaldx = 0;
+                if (bar) {
+                    const $bar = bar.$bar;
+                    $bar.ox = $bar.getX();
+                    $bar.oy = $bar.getY();
+                    $bar.owidth = $bar.getWidth();
+                    $bar.finaldx = 0;
+                }
             });
         });
 
@@ -1406,7 +1432,7 @@ export default class Gantt {
 
                     let { new_start_date, new_end_date } = bar.compute_start_end_date();
                     new_end_date = date_utils.add(new_end_date, -1, 'second');
-                    
+
                     this.show_drag_popup_left({
                         x: $bar.ox + $bar.finaldx,
                         y: $bar.getY(),
@@ -1445,7 +1471,7 @@ export default class Gantt {
                     bar.update_bar_position({ x: $bar.ox + $bar.finaldx });
                     let { new_start_date, new_end_date } = bar.compute_start_end_date();
                     new_end_date = date_utils.add(new_end_date, -1, 'second');
-                    
+
                     this.show_drag_popup_left({
                         x: $bar.ox + $bar.finaldx,
                         y: $bar.getY(),

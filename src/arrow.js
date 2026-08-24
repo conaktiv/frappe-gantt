@@ -54,7 +54,9 @@ export default class Arrow {
     }
 
     calculate_path() {
-        if (this.depType === 'EA') {
+        if (!this.from_task) {
+            this.calculatePathToUndefinedFromTask();
+        } else if (this.depType === 'EA') {
             this.calculatePathEA();
         } else if (this.depType === 'AE') {
             this.calculatePathAE();
@@ -62,6 +64,38 @@ export default class Arrow {
             this.calculatePathAA();
         } else if (this.depType === 'EE') {
             this.calculatePathEE();
+        }
+    }
+
+    calculatePathToUndefinedFromTask() {
+        let start_x;
+        let end_x;
+        let start_y = this.gantt.config.header_height +
+            this.gantt.options.bar_height +
+            (this.gantt.options.padding + this.gantt.options.bar_height) * this.to_task.task._index +
+            this.gantt.options.padding - 14;
+
+        if (
+            this.depType === 'AA'
+            || this.depType === 'EA'
+        ) {
+            start_x = this.to_task.$bar.getX() - 16;
+
+            this.path = `
+            M ${start_x} ${start_y}
+            h 16
+            m -${this.arrowSize} -${this.arrowSize}
+            l ${this.arrowSize} ${this.arrowSize}
+            l -${this.arrowSize} ${this.arrowSize}`;
+        } else {
+            start_x = this.to_task.$bar.getX() + this.to_task.$bar.getWidth() + 16;
+
+            this.path = `
+            M ${start_x} ${start_y}
+            h -16
+            m ${this.arrowSize} -${this.arrowSize}
+            l -${this.arrowSize} ${this.arrowSize}
+            l ${this.arrowSize} ${this.arrowSize}`;
         }
     }
 
@@ -116,7 +150,7 @@ export default class Arrow {
         let start_y = this.gantt.config.header_height +
             this.gantt.options.bar_height +
             (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
-            this.gantt.options.padding - 3;
+            this.gantt.options.padding - 16;
 
         // Termin-Abstände einbeziehen
         //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
@@ -172,7 +206,7 @@ export default class Arrow {
         let start_y = this.gantt.config.header_height +
             this.gantt.options.bar_height +
             (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
-            this.gantt.options.padding - 3;
+            this.gantt.options.padding - 16;
 
         // Termin-Abstände einbeziehen
         //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
@@ -233,7 +267,7 @@ export default class Arrow {
         let start_y = this.gantt.config.header_height +
             this.gantt.options.bar_height +
             (this.gantt.options.padding + this.gantt.options.bar_height) * this.from_task.task._index +
-            this.gantt.options.padding - 3;
+            this.gantt.options.padding - 16;
 
         // Termin-Abstände einbeziehen
         //start_y += (this.gantt.options.padding + this.gantt.options.bar_height) * this.getAddTermineToStartY();
@@ -345,7 +379,7 @@ export default class Arrow {
     draw() {
         this.element = createSVG('path', {
             d: this.path,
-            'data-from': this.from_task.task.id,
+            'data-from': this.from_task ? this.from_task.task.id : 'undefined',
             'data-to': this.to_task.task.id,
         });
     }
