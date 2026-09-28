@@ -1537,7 +1537,8 @@ export default class Gantt {
     }
 
     /**
-     * Drawing a new dependency from a bar connector ('+') to the start or end of another bar.
+     * The connectors ('+') of a bar are only shown after clicking the bar.
+     * Drawing a new dependency from a bar connector to the start or end of another bar.
      * Triggers on_dependency_add(predecessor_task, successor_task, type, distance_in_days).
      * Bound only once, because bind_events() is called again on every refresh.
      */
@@ -1559,6 +1560,23 @@ export default class Gantt {
                 );
             });
         };
+
+        document.addEventListener('click', (e) => {
+            const bar_wrapper = e.composedPath().find(
+                (el) => el.classList?.contains('bar-wrapper'),
+            );
+            const bar =
+                bar_wrapper &&
+                this.$svg.contains(bar_wrapper) &&
+                this.get_bar(bar_wrapper.getAttribute('data-id'));
+
+            if (bar?.action_completed) return;
+
+            this.$svg.querySelectorAll('.bar-wrapper.connectors-visible').forEach((wrapper) => {
+                wrapper.classList.remove('connectors-visible');
+            });
+            bar?.group.classList.add('connectors-visible');
+        });
 
         $.on(this.$svg, 'mousedown', '.bar-connector', (e, connector) => {
             const bar_wrapper = $.closest('.bar-wrapper', connector);
@@ -1652,9 +1670,11 @@ export default class Gantt {
 
     /**
      * A new dependency must not exist in either direction yet and must not create a cycle.
+     * The option can_link(predecessor, successor) can forbid further links by returning false.
      */
     can_link(predecessor, successor) {
         return (
+            this.options.can_link?.(predecessor, successor) !== false &&
             this.get_dependency_types(successor.id, predecessor.id).length === 0 &&
             this.get_dependency_types(predecessor.id, successor.id).length === 0 &&
             !this.get_all_dependent_tasks(successor.id).includes(predecessor.id)
