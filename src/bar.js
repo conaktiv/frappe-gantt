@@ -456,68 +456,15 @@ export default class Bar {
         });
     }
 
-    update_bar_position({ x = null, width = null, isResize = false, isParentResizeLeft = false, isParentResizeRight = false  }) {
+    update_bar_position({ x = null, width = null }) {
         const bar = this.$bar;
 
         if (x) {
-            for (const dependency of this.task.dependencies) {
-                const depDefinitions = dependency.split(';');
-
-                for (const depDefinition of depDefinitions) {
-                    const depElems   = depDefinition.split('|');
-                    const depBar = this.gantt.get_bar(depElems[0]);
-
-                    if (!depBar) {
-                        continue;
-                    }
-                    const parentX    = depBar.$bar.getX();
-                    const parentEndX = depBar.$bar.getEndX();
-
-                    if (
-                        depElems[0] === 'AA' ||
-                        depElems[0] === 'EA'
-                    ) {
-                        if (isParentResizeRight) {
-                            return false;
-                        }
-                        if (x >= parentX) {
-                            return false;
-                        }
-                    } else {
-                        if (isParentResizeLeft) {
-                            return false;
-                        }
-                        if (
-                            isParentResizeRight &&
-                            parentEndX > bar.getEndX()
-                        ) {
-                            //return false;
-                        }
-                    }
-                }
-            }
-
-            const xs = this.task.dependencies.map((dep) => {
-                const depElems = dep.split('|');
-                const depBar = this.gantt.get_bar(depElems[0]);
-
-                if (depBar) {
-                    return depBar.$bar.getX();
-                } else {
-                    return false;
-                }
-            });
-
-            if (xs !== false) {
-                const valid_x = xs.reduce((prev, curr) => {
-                    return prev && x >= curr;
-                }, true);
-                if (!valid_x) return;
-                this.update_attr(bar, 'x', x);
-                this.x = x;
-                this.$date_highlight.style.left = x + 'px';
-            }
+            this.update_attr(bar, 'x', x);
+            this.x = x;
+            this.$date_highlight.style.left = x + 'px';
         }
+
         if (width > 0) {
             this.update_attr(bar, 'width', width);
             this.$date_highlight.style.width = width + 'px';

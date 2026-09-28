@@ -237,9 +237,16 @@ export default class Gantt {
     setup_dependencies() {
         this.dependency_map = {};
         for (let t of this.tasks) {
-            for (let d of t.dependencies) {
-                this.dependency_map[d] = this.dependency_map[d] || [];
-                this.dependency_map[d].push(t.id);
+            for (const dep of t.dependencies) {
+                for (const depDefinition of dep.split(';')) {
+                    const predecessorId = depDefinition.split('|')[0].trim();
+
+                    if (!predecessorId) {
+                        continue;
+                    }
+                    this.dependency_map[predecessorId] = this.dependency_map[predecessorId] || [];
+                    this.dependency_map[predecessorId].push(t.id);
+                }
             }
         }
     }
@@ -1286,13 +1293,12 @@ export default class Gantt {
         let is_resizing_left = false;
         let is_resizing_right = false;
         let parent_bar_id = null;
+        let min_dx = -Infinity;
         let bars = []; // instanceof Bar
         this.bar_being_dragged = null;
 
         const action_in_progress = () =>
             is_dragging || is_resizing_left || is_resizing_right;
-
-        let updateChildren;
 
         this.$svg.onclick = (e) => {
             if (e.target.classList.contains('grid-row')) this.unselect_all();
@@ -1312,7 +1318,6 @@ export default class Gantt {
         });
 
         $.on(this.$svg, 'mousedown', '.bar-wrapper, .handle', (e, element) => {
-            updateChildren = true;
             const bar_wrapper = $.closest('.bar-wrapper', element);
             if (element.classList.contains('left')) {
                 is_resizing_left = true;
@@ -1338,16 +1343,25 @@ export default class Gantt {
             x_on_start = e.offsetX || e.layerX;
 
             parent_bar_id = bar_wrapper.getAttribute('data-id');
-            let ids;
+            const ids = [parent_bar_id];
             if (this.options.move_dependencies) {
-                ids = [
-                    parent_bar_id,
-                    ...this.get_all_dependent_tasks(parent_bar_id),
-                ];
-            } else {
-                ids = [parent_bar_id];
+                if (is_resizing_left) {
+                    ids.push(...this.get_edge_dependent_tasks(parent_bar_id, 'A'));
+                } else if (is_resizing_right) {
+                    ids.push(...this.get_edge_dependent_tasks(parent_bar_id, 'E'));
+                } else {
+                    ids.push(...this.get_all_dependent_tasks(parent_bar_id));
+                }
             }
-            bars = ids.map((id) => this.get_bar(id));
+            bars = ids.map((id) => this.get_bar(id)).filter(Boolean);
+
+            let moved_points = ['A', 'E'];
+            if (is_resizing_left) {
+                moved_points = ['A'];
+            } else if (is_resizing_right) {
+                moved_points = ['E'];
+            }
+            min_dx = this.get_min_drag_dx(this.get_task(parent_bar_id), moved_points);
 
             this.bar_being_dragged = false;
             pos = x_on_start;
@@ -1411,27 +1425,24 @@ export default class Gantt {
 
                 return;
             }
-            const dx = (e.offsetX || e.layerX) - x_on_start;
+            const dx = Math.max((e.offsetX || e.layerX) - x_on_start, min_dx);
 
             bars.forEach((bar) => {
                 const $bar = bar.$bar;
+                const is_parent = parent_bar_id === bar.task.id;
                 $bar.finaldx = this.get_snap_position(dx, $bar.ox);
                 this.hide_popup();
                 if (is_resizing_left) {
-                    if (parent_bar_id === bar.task.id) {
-                        updateChildren = bar.update_bar_position({
-                            x: $bar.ox + $bar.finaldx,
-                            width: $bar.owidth - $bar.finaldx,
-                            isResize: true
-                        });
-                    } else if (updateChildren) {
-                        updateChildren = bar.update_bar_position({
-                            x: $bar.ox + $bar.finaldx,
-                        });
+                    if (!is_parent) {
+                        bar.update_bar_position({ x: $bar.ox + $bar.finaldx });
+                        return;
                     }
+                    bar.update_bar_position({
+                        x: $bar.ox + $bar.finaldx,
+                        width: $bar.owidth - $bar.finaldx,
+                    });
 
-                    let { new_start_date, new_end_date } = bar.compute_start_end_date();
-                    new_end_date = date_utils.add(new_end_date, -1, 'second');
+                    let { new_start_date } = bar.compute_start_end_date();
 
                     this.show_drag_popup_left({
                         x: $bar.ox + $bar.finaldx,
@@ -1441,19 +1452,15 @@ export default class Gantt {
                         startDate: this.config.formatDate ? this.config.formatDate(new_start_date) : new_start_date,
                     });
                 } else if (is_resizing_right) {
-                    if (parent_bar_id === bar.task.id) {
-                        updateChildren = bar.update_bar_position({
-                            width: $bar.owidth + $bar.finaldx,
-                            isResize: true
-                        });
-                    } else if (updateChildren) {
-                        updateChildren = bar.update_bar_position({
-                            x:                   $bar.ox + $bar.finaldx,
-                            isParentResizeRight: true
-                        });
+                    if (!is_parent) {
+                        bar.update_bar_position({ x: $bar.ox + $bar.finaldx });
+                        return;
                     }
+                    bar.update_bar_position({
+                        width: $bar.owidth + $bar.finaldx,
+                    });
 
-                    let { new_start_date, new_end_date } = bar.compute_start_end_date();
+                    let { new_end_date } = bar.compute_start_end_date();
                     new_end_date = date_utils.add(new_end_date, -1, 'second');
 
                     this.show_drag_popup_right({
@@ -1469,6 +1476,11 @@ export default class Gantt {
                     !this.options.readonly_dates
                 ) {
                     bar.update_bar_position({ x: $bar.ox + $bar.finaldx });
+
+                    if (!is_parent) {
+                        return;
+                    }
+
                     let { new_start_date, new_end_date } = bar.compute_start_end_date();
                     new_end_date = date_utils.add(new_end_date, -1, 'second');
 
@@ -1599,21 +1611,83 @@ export default class Gantt {
     }
 
     get_all_dependent_tasks(task_id) {
-        let out = [];
+        const out = [];
         let to_process = [task_id];
-        while (to_process.length) {
-            const deps = to_process.reduce((acc, curr) => {
-                acc = acc.concat(this.dependency_map[curr]);
-                return acc;
-            }, []);
 
-            out = out.concat(deps);
-            to_process = deps.filter(
-                (d) => !to_process.includes(d) && !out.includes(d),
-            );
+        while (to_process.length) {
+            const next = [];
+
+            for (const id of to_process) {
+                for (const dep of this.dependency_map[id] || []) {
+                    if (dep !== task_id && !out.includes(dep)) {
+                        out.push(dep);
+                        next.push(dep);
+                    }
+                }
+            }
+            to_process = next;
         }
 
-        return out.filter(Boolean);
+        return out;
+    }
+
+    /**
+     * Successors affected when only one edge of task_id moves: predecessor_point 'A' (start)
+     * matches AA/AE dependencies, 'E' (end) matches EA/EE. Their own successors follow completely.
+     */
+    get_edge_dependent_tasks(task_id, predecessor_point) {
+        const out = [];
+
+        for (const successor_id of this.dependency_map[task_id] || []) {
+            const types = this.get_dependency_types(successor_id, task_id);
+
+            if (!types.some((type) => type[0] === predecessor_point)) {
+                continue;
+            }
+
+            for (const id of [successor_id, ...this.get_all_dependent_tasks(successor_id)]) {
+                if (id !== task_id && !out.includes(id)) {
+                    out.push(id);
+                }
+            }
+        }
+
+        return out;
+    }
+
+    /**
+     * Smallest dx allowed for task, so that no predecessor distance ("Abstand") whose
+     * successor point ('A' start, 'E' end) is in moved_points drops below 0.
+     */
+    get_min_drag_dx(task, moved_points) {
+        const px_per_day =
+            this.config.column_width /
+            date_utils.convert_scales(this.config.view_mode.step, 'day');
+        let min_dx = -Infinity;
+
+        for (const dep of task?.dependencies || []) {
+            for (const depDefinition of dep.split(';')) {
+                const depElems = depDefinition.split('|');
+                const type = depElems[1] || 'EA';
+
+                if (!moved_points.includes(type[1])) {
+                    continue;
+                }
+
+                const abstand = Math.max(parseFloat(depElems[2]) || 0, 0);
+                min_dx = Math.max(min_dx, -abstand * px_per_day);
+            }
+        }
+
+        return min_dx;
+    }
+
+    get_dependency_types(task_id, predecessor_id) {
+        return this.get_task(task_id).dependencies
+            .flatMap((dep) => dep.split(';'))
+            .map((depDefinition) => depDefinition.split('|'))
+            .filter((depElems) => depElems[0].trim() === predecessor_id)
+            .map((depElems) => depElems[1] || 'EA');
     }
 
     get_snap_position(dx, ox) {
