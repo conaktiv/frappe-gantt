@@ -1511,26 +1511,27 @@ export default class Gantt {
             });
         });
 
+        // on document, so a drag ending outside the svg (e.g. above the sticky header) is committed too
         document.addEventListener('mouseup', () => {
             is_dragging = false;
             is_resizing_left = false;
             is_resizing_right = false;
+            this.bar_being_dragged = null;
             this.hide_drag_popup_left();
             this.hide_drag_popup_right();
             this.$container
                 .querySelector('.visible')
                 ?.classList?.remove?.('visible');
-        });
 
-        $.on(this.$svg, 'mouseup', (e) => {
-            this.bar_being_dragged = null;
             bars.forEach((bar) => {
                 const $bar = bar.$bar;
                 if (!$bar.finaldx) return;
+                $bar.finaldx = 0;
                 bar.date_changed();
                 bar.compute_progress();
                 bar.set_action_completed();
             });
+            bars = [];
         });
 
         this.bind_bar_progress();

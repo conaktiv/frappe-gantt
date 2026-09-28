@@ -49,5 +49,8 @@
     ],
     "sideEffects": [
         "*.css"
-    ]
+    ],
+    "dependencies": {
+        "conaktiv-frappe-gantt": "^1.2.9"
+    }
 }
