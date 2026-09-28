@@ -52,6 +52,15 @@ export default class Bar {
             class: 'handle-group',
             append_to: this.group,
         });
+
+        // last bar in the layer is drawn on top, so its link connectors are not covered
+        this.group.addEventListener('mouseenter', () => {
+            const layer = this.group.parentNode;
+
+            if (layer && layer.lastChild !== this.group) {
+                layer.appendChild(this.group);
+            }
+        });
     }
 
     prepare_values() {
@@ -118,6 +127,7 @@ export default class Bar {
         }
         this.draw_label();
         this.draw_resize_handles();
+        this.draw_link_connectors();
 
         if (this.task.thumbnail) {
             this.draw_thumbnail();
@@ -361,6 +371,50 @@ export default class Bar {
         }
     }
 
+    draw_link_connectors() {
+        this.$connectors = [];
+
+        if (
+            this.invalid ||
+            this.task.ghost ||
+            this.gantt.isViewMode ||
+            this.gantt.options.readonly
+        ) {
+            return;
+        }
+
+        for (const point of ['A', 'E']) {
+            const connector = createSVG('g', {
+                class: 'bar-connector ' + (point === 'A' ? 'start' : 'end'),
+                'data-point': point,
+                append_to: this.handle_group,
+            });
+            createSVG('circle', { cx: 0, cy: 0, r: 8.5, append_to: connector });
+            createSVG('path', { d: 'M -4 0 H 4 M 0 -4 V 4', append_to: connector });
+            this.$connectors.push(connector);
+        }
+        this.update_connector_position();
+    }
+
+    /**
+     * Point where a dependency arrow docks: 'A' left of the bar start, 'E' right of the bar end.
+     */
+    get_connector_position(point) {
+        const offset = 10;
+
+        return {
+            x: point === 'A' ? this.$bar.getX() - offset : this.$bar.getEndX() + offset,
+            y: this.$bar.getY() + this.height / 2,
+        };
+    }
+
+    update_connector_position() {
+        for (const connector of this.$connectors || []) {
+            const { x, y } = this.get_connector_position(connector.getAttribute('data-point'));
+            connector.setAttribute('transform', `translate(${x}, ${y})`);
+        }
+    }
+
     bind() {
         if (this.invalid) return;
         this.setup_click_event();
@@ -475,6 +529,7 @@ export default class Bar {
         }
         this.update_label_position();
         this.update_handle_position();
+        this.update_connector_position();
         //this.date_changed();
         this.compute_duration();
 

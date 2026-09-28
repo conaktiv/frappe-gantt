@@ -386,6 +386,7 @@ export default class Gantt {
 
         if (this.isViewMode === false) {
             this.bind_bar_events();
+            this.bind_link_events();
         }
     }
 
@@ -412,6 +413,11 @@ export default class Gantt {
                 append_to: this.$svg,
             });
         }
+        // hovered and selected arrows are moved here, so they lie above the bars
+        this.layers.arrow_overlay = createSVG('g', {
+            class: 'arrow arrow-overlay',
+            append_to: this.$svg,
+        });
         this.$extras = this.create_el({
             classes: 'extras',
             append_to: this.$container,
@@ -1318,6 +1324,9 @@ export default class Gantt {
         });
 
         $.on(this.$svg, 'mousedown', '.bar-wrapper, .handle', (e, element) => {
+            if (e.target.closest('.bar-connector')) {
+                return;
+            }
             const bar_wrapper = $.closest('.bar-wrapper', element);
             if (element.classList.contains('left')) {
                 is_resizing_left = true;
@@ -1525,6 +1534,142 @@ export default class Gantt {
         });
 
         this.bind_bar_progress();
+    }
+
+    /**
+     * Drawing a new dependency from a bar connector ('+') to the start or end of another bar.
+     * Triggers on_dependency_add(predecessor_task, successor_task, type, distance_in_days).
+     * Bound only once, because bind_events() is called again on every refresh.
+     */
+    bind_link_events() {
+        if (this.link_events_bound) {
+            return;
+        }
+        this.link_events_bound = true;
+
+        let link = null;
+
+        const clear_target = () => {
+            this.$svg.querySelectorAll('.bar-wrapper.link-target').forEach((wrapper) => {
+                wrapper.classList.remove(
+                    'link-target',
+                    'link-target-invalid',
+                    'link-target-start',
+                    'link-target-end',
+                );
+            });
+        };
+
+        $.on(this.$svg, 'mousedown', '.bar-connector', (e, connector) => {
+            const bar_wrapper = $.closest('.bar-wrapper', connector);
+            const from_bar = this.get_bar(bar_wrapper.getAttribute('data-id'));
+            const from_point = connector.getAttribute('data-point');
+
+            e.preventDefault();
+            this.hide_popup();
+            this.$svg.classList.add('linking');
+            link = {
+                from_bar,
+                from_point,
+                start: from_bar.get_connector_position(from_point),
+                target: null,
+                $path: createSVG('path', {
+                    class: 'link-preview',
+                    append_to: this.layers.arrow,
+                }),
+            };
+        });
+
+        $.on(this.$svg, 'mousemove', (e) => {
+            if (!link) return;
+
+            const svg_rect = this.$svg.getBoundingClientRect();
+            let end = { x: e.clientX - svg_rect.left, y: e.clientY - svg_rect.top };
+            const bar_wrapper = e.target.closest('.bar-wrapper');
+            const to_bar = bar_wrapper && this.get_bar(bar_wrapper.getAttribute('data-id'));
+
+            clear_target();
+            link.target = null;
+
+            if (to_bar && to_bar !== link.from_bar && !to_bar.task.ghost) {
+                const to_point =
+                    end.x < to_bar.$bar.getX() + to_bar.$bar.getWidth() / 2 ? 'A' : 'E';
+
+                bar_wrapper.classList.add('link-target');
+
+                if (this.can_link(link.from_bar.task, to_bar.task)) {
+                    bar_wrapper.classList.add(
+                        to_point === 'A' ? 'link-target-start' : 'link-target-end',
+                    );
+                    link.target = { to_bar, to_point };
+                    end = to_bar.get_connector_position(to_point);
+                } else {
+                    bar_wrapper.classList.add('link-target-invalid');
+                }
+            }
+
+            link.$path.setAttribute(
+                'd',
+                `M ${link.start.x} ${link.start.y} L ${end.x} ${end.y}`,
+            );
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!link) return;
+
+            const { from_bar, from_point, target } = link;
+
+            link.$path.remove();
+            link = null;
+            clear_target();
+            this.$svg.classList.remove('linking');
+
+            if (!target) return;
+
+            const type = from_point + target.to_point;
+
+            this.trigger_event('dependency_add', [
+                from_bar.task,
+                target.to_bar.task,
+                type,
+                this.get_link_distance(from_bar.task, target.to_bar.task, type),
+            ]);
+        });
+    }
+
+    select_arrow(arrow) {
+        this.unselect_arrows();
+        arrow.set_selected(true);
+    }
+
+    unselect_arrows() {
+        for (const arrow of this.arrows || []) {
+            if (arrow.selected) {
+                arrow.set_selected(false);
+            }
+        }
+    }
+
+    /**
+     * A new dependency must not exist in either direction yet and must not create a cycle.
+     */
+    can_link(predecessor, successor) {
+        return (
+            this.get_dependency_types(successor.id, predecessor.id).length === 0 &&
+            this.get_dependency_types(predecessor.id, successor.id).length === 0 &&
+            !this.get_all_dependent_tasks(successor.id).includes(predecessor.id)
+        );
+    }
+
+    /**
+     * Current distance in calendar days (never below 0) between the linked points,
+     * so that adding the dependency does not move the successor.
+     */
+    get_link_distance(predecessor, successor, type) {
+        const from_date = type[0] === 'A' ? predecessor._start : predecessor._end;
+        const to_date = type[1] === 'A' ? successor._start : successor._end;
+
+        return Math.max(Math.round((to_date - from_date) / 86400000), 0);
     }
 
     bind_bar_progress() {

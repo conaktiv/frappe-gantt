@@ -377,15 +377,66 @@ export default class Arrow {
     }
 
     draw() {
-        this.element = createSVG('path', {
-            d: this.path,
+        this.element = createSVG('g', {
+            class: 'arrow-wrapper',
             'data-from': this.from_task ? this.from_task.task.id : 'undefined',
             'data-to': this.to_task.task.id,
         });
+        this.$path = createSVG('path', {
+            d: this.path,
+            append_to: this.element,
+        });
+
+        if (
+            this.from_task &&
+            !this.gantt.isViewMode &&
+            !this.gantt.options.readonly
+        ) {
+            this.$hit = createSVG('path', {
+                d: this.path,
+                class: 'arrow-hit',
+                append_to: this.element,
+            });
+            this.element.addEventListener('mouseenter', () => {
+                if (this.element.parentNode !== this.gantt.layers.arrow_overlay) {
+                    this.gantt.layers.arrow_overlay.appendChild(this.element);
+                }
+            });
+            this.element.addEventListener('mouseleave', () => {
+                if (!this.selected) {
+                    this.gantt.layers.arrow.appendChild(this.element);
+                }
+            });
+            this.element.addEventListener('mousedown', (e) => e.stopPropagation());
+            this.element.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.gantt.select_arrow(this);
+                this.gantt.trigger_event('arrow_click', [
+                    this.from_task.task,
+                    this.to_task.task,
+                    e,
+                ]);
+            });
+        }
+    }
+
+    /**
+     * A selected arrow stays above the bars until it is unselected.
+     */
+    set_selected(state) {
+        this.selected = state;
+        this.element.classList.toggle('selected', state);
+
+        if (state) {
+            this.gantt.layers.arrow_overlay.appendChild(this.element);
+        } else {
+            this.gantt.layers.arrow.appendChild(this.element);
+        }
     }
 
     update() {
         this.calculate_path();
-        this.element.setAttribute('d', this.path);
+        this.$path.setAttribute('d', this.path);
+        this.$hit?.setAttribute('d', this.path);
     }
 }
