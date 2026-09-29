@@ -1293,6 +1293,10 @@ export default class Gantt {
         });
     }
 
+    get_svg_x(e) {
+        return e.clientX - this.$svg.getBoundingClientRect().left;
+    }
+
     bind_bar_events() {
         let is_dragging = false;
         let x_on_start = 0;
@@ -1314,7 +1318,7 @@ export default class Gantt {
         $.on(this.$svg, 'mousemove', '.bar-wrapper, .handle', (e) => {
             if (
                 this.bar_being_dragged === false &&
-                Math.abs((e.offsetX || e.layerX) - pos) > 10
+                Math.abs(this.get_svg_x(e) - pos) > 10
             )
                 this.bar_being_dragged = true;
         });
@@ -1327,6 +1331,7 @@ export default class Gantt {
             if (e.target.closest('.bar-connector')) {
                 return;
             }
+            e.preventDefault();
             const bar_wrapper = $.closest('.bar-wrapper', element);
             if (element.classList.contains('left')) {
                 is_resizing_left = true;
@@ -1349,7 +1354,7 @@ export default class Gantt {
 
             if (this.popup) this.popup.hide();
 
-            x_on_start = e.offsetX || e.layerX;
+            x_on_start = this.get_svg_x(e);
 
             parent_bar_id = bar_wrapper.getAttribute('data-id');
             const ids = [parent_bar_id];
@@ -1429,12 +1434,12 @@ export default class Gantt {
             });
         }
 
-        $.on(this.$svg, 'mousemove', (e) => {
+        // on document, so the drag continues while the pointer is outside the svg (e.g. over the sticky header)
+        document.addEventListener('mousemove', (e) => {
             if (!action_in_progress()) {
-
                 return;
             }
-            const dx = Math.max((e.offsetX || e.layerX) - x_on_start, min_dx);
+            const dx = Math.max(this.get_svg_x(e) - x_on_start, min_dx);
 
             bars.forEach((bar) => {
                 const $bar = bar.$bar;
@@ -1599,7 +1604,7 @@ export default class Gantt {
             };
         });
 
-        $.on(this.$svg, 'mousemove', (e) => {
+        document.addEventListener('mousemove', (e) => {
             if (!link) return;
 
             const svg_rect = this.$svg.getBoundingClientRect();
@@ -1701,8 +1706,9 @@ export default class Gantt {
         let $bar = null;
 
         $.on(this.$svg, 'mousedown', '.handle.progress', (e, handle) => {
+            e.preventDefault();
             is_resizing = true;
-            x_on_start = e.offsetX || e.layerX;
+            x_on_start = this.get_svg_x(e);
 
             const $bar_wrapper = $.closest('.bar-wrapper', handle);
             const id = $bar_wrapper.getAttribute('data-id');
@@ -1722,9 +1728,9 @@ export default class Gantt {
             d + this.config.column_width,
         ]);
 
-        $.on(this.$svg, 'mousemove', (e) => {
+        document.addEventListener('mousemove', (e) => {
             if (!is_resizing) return;
-            let now_x = e.offsetX || e.layerX;
+            let now_x = this.get_svg_x(e);
 
             let moving_right = now_x > x_on_start;
             if (moving_right) {
@@ -1763,7 +1769,7 @@ export default class Gantt {
             $bar_progress.finaldx = dx;
         });
 
-        $.on(this.$svg, 'mouseup', () => {
+        document.addEventListener('mouseup', () => {
             is_resizing = false;
             if (!($bar_progress && $bar_progress.finaldx)) return;
 
