@@ -16,6 +16,9 @@ export default class Gantt {
     drag_popup_left;
     drag_popup_right;
 
+    // Alle Listener auf `document` hängen an diesem Signal und werden in destroy() entfernt
+    document_listener_controller = new AbortController();
+
     constructor(wrapper, tasks, options) {
         this.isViewMode = options.isViewMode || false;
         this.setup_wrapper(wrapper);
@@ -379,15 +382,31 @@ export default class Gantt {
         }
     }
 
+    /**
+     * Kann mehrfach aufgerufen werden (z.B. nach setup_tasks()/render()).
+     * Listener auf $container, $svg und document werden nur einmal pro Instanz registriert,
+     * da diese Elemente render() überleben. Nur die Holiday-Labels werden neu gebunden
+     * (Property-Zuweisung, daher idempotent).
+     */
     bind_events() {
-        this.bind_grid_click();
+        this.bind_once('grid_click', () => this.bind_grid_click());
         this.bind_holiday_labels();
-        this.bind_scroll_events();
+        this.bind_once('scroll_events', () => this.bind_scroll_events());
 
         if (this.isViewMode === false) {
-            this.bind_bar_events();
-            this.bind_link_events();
+            this.bind_once('bar_events', () => this.bind_bar_events());
+            this.bind_once('link_events', () => this.bind_link_events());
         }
+    }
+
+    bind_once(key, bind) {
+        this.bound_events = this.bound_events || new Set();
+
+        if (this.bound_events.has(key)) {
+            return;
+        }
+        this.bound_events.add(key);
+        bind();
     }
 
     render() {
@@ -1435,7 +1454,7 @@ export default class Gantt {
         }
 
         // on document, so the drag continues while the pointer is outside the svg (e.g. over the sticky header)
-        document.addEventListener('mousemove', (e) => {
+        this.add_document_listener('mousemove', (e) => {
             if (!action_in_progress()) {
                 return;
             }
@@ -1517,7 +1536,7 @@ export default class Gantt {
         });
 
         // on document, so a drag ending outside the svg (e.g. above the sticky header) is committed too
-        document.addEventListener('mouseup', () => {
+        this.add_document_listener('mouseup', () => {
             is_dragging = false;
             is_resizing_left = false;
             is_resizing_right = false;
@@ -1546,14 +1565,9 @@ export default class Gantt {
      * The connectors ('+') of a bar are only shown after clicking the bar.
      * Drawing a new dependency from a bar connector to the start or end of another bar.
      * Triggers on_dependency_add(predecessor_task, successor_task, type, distance_in_days).
-     * Bound only once, because bind_events() is called again on every refresh.
+     * Bound only once via bind_once(), because bind_events() is called again on every refresh.
      */
     bind_link_events() {
-        if (this.link_events_bound) {
-            return;
-        }
-        this.link_events_bound = true;
-
         let link = null;
 
         const clear_target = () => {
@@ -1567,21 +1581,23 @@ export default class Gantt {
             });
         };
 
-        document.addEventListener('click', (e) => {
+        this.add_document_listener('click', (e) => {
             const bar_wrapper = e.composedPath().find(
                 (el) => el.classList?.contains('bar-wrapper'),
             );
+            // Kein `a && b && c`: liegt der Wrapper nicht in diesem SVG, wäre bar === false
+            // und `false?.group` liefert undefined statt abzubrechen.
             const bar =
-                bar_wrapper &&
-                this.$svg.contains(bar_wrapper) &&
-                this.get_bar(bar_wrapper.getAttribute('data-id'));
+                bar_wrapper && this.$svg.contains(bar_wrapper)
+                    ? this.get_bar(bar_wrapper.getAttribute('data-id'))
+                    : undefined;
 
             if (bar?.action_completed) return;
 
             this.$svg.querySelectorAll('.bar-wrapper.connectors-visible').forEach((wrapper) => {
                 wrapper.classList.remove('connectors-visible');
             });
-            bar?.group.classList.add('connectors-visible');
+            bar?.group?.classList.add('connectors-visible');
         });
 
         $.on(this.$svg, 'mousedown', '.bar-connector', (e, connector) => {
@@ -1604,13 +1620,20 @@ export default class Gantt {
             };
         });
 
-        document.addEventListener('mousemove', (e) => {
+        this.add_document_listener('mousemove', (e) => {
             if (!link) return;
 
             const svg_rect = this.$svg.getBoundingClientRect();
             let end = { x: e.clientX - svg_rect.left, y: e.clientY - svg_rect.top };
-            const bar_wrapper = e.target.closest('.bar-wrapper');
-            const to_bar = bar_wrapper && this.get_bar(bar_wrapper.getAttribute('data-id'));
+            // Listener hängt an document: e.target ist bei Shadow DOM nur der Shadow-Host,
+            // daher den tatsächlichen Pfad auswerten.
+            const bar_wrapper = e.composedPath().find(
+                (el) => el.classList?.contains('bar-wrapper'),
+            );
+            const to_bar =
+                bar_wrapper && this.$svg.contains(bar_wrapper)
+                    ? this.get_bar(bar_wrapper.getAttribute('data-id'))
+                    : undefined;
 
             clear_target();
             link.target = null;
@@ -1638,7 +1661,7 @@ export default class Gantt {
             );
         });
 
-        document.addEventListener('mouseup', () => {
+        this.add_document_listener('mouseup', () => {
             if (!link) return;
 
             const { from_bar, from_point, target } = link;
@@ -1728,7 +1751,7 @@ export default class Gantt {
             d + this.config.column_width,
         ]);
 
-        document.addEventListener('mousemove', (e) => {
+        this.add_document_listener('mousemove', (e) => {
             if (!is_resizing) return;
             let now_x = this.get_svg_x(e);
 
@@ -1769,7 +1792,7 @@ export default class Gantt {
             $bar_progress.finaldx = dx;
         });
 
-        document.addEventListener('mouseup', () => {
+        this.add_document_listener('mouseup', () => {
             is_resizing = false;
             if (!($bar_progress && $bar_progress.finaldx)) return;
 
@@ -2020,6 +2043,24 @@ export default class Gantt {
             .reduce((prev_date, cur_date) =>
                 cur_date <= prev_date ? cur_date : prev_date,
             );
+    }
+
+    add_document_listener(type, listener, options = {}) {
+        document.addEventListener(type, listener, {
+            ...options,
+            signal: this.document_listener_controller.signal,
+        });
+    }
+
+    /**
+     * Entfernt alle globalen (document-)Listener und leert das SVG.
+     * Muss aufgerufen werden, bevor die Instanz verworfen wird.
+     *
+     * @memberof Gantt
+     */
+    destroy() {
+        this.document_listener_controller.abort();
+        this.clear();
     }
 
     /**
