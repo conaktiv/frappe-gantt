@@ -1312,6 +1312,84 @@ export default class Gantt {
         });
     }
 
+    /**
+     * Extends gantt_start/gantt_end while bars are dragged beyond the drawn range, so the
+     * sticky header keeps its width in sync with the bars. Re-renders, so callers must
+     * re-fetch their Bar instances. Returns the x shift of existing content in px, or null
+     * if nothing was extended.
+     */
+    extend_dates_for_bars(bars) {
+        if (!bars.some(({ $bar }) => $bar.finaldx)) return null;
+
+        const margin = 150;
+        const grid_width = this.dates.length * this.config.column_width;
+        let min_x = Infinity;
+        let max_x = -Infinity;
+        bars.forEach(({ group }) => {
+            const { x, width } = group.getBBox();
+            min_x = Math.min(min_x, x);
+            max_x = Math.max(max_x, x + width);
+        });
+
+        const units_for = (px) =>
+            Math.max(
+                Math.ceil(px / this.config.column_width) * this.config.step,
+                this.config.extend_by_units,
+            );
+        const overflow_start = margin - min_x;
+        const overflow_end = max_x + margin - grid_width;
+        if (overflow_start <= 0 && overflow_end <= 0) return null;
+
+        const old_start = this.gantt_start;
+        const old_scroll_left = this.$container.scrollLeft;
+        if (overflow_start > 0) {
+            this.gantt_start = date_utils.add(
+                this.gantt_start,
+                -units_for(overflow_start),
+                this.config.unit,
+            );
+        }
+        if (overflow_end > 0) {
+            this.gantt_end = date_utils.add(
+                this.gantt_end,
+                units_for(overflow_end),
+                this.config.unit,
+            );
+        }
+        this.setup_date_values();
+        this.render();
+        this.bind_holiday_labels();
+        this.$svg.querySelectorAll('animate').forEach((a) => a.remove());
+
+        const shift =
+            (date_utils.diff(old_start, this.gantt_start, this.config.unit) /
+                this.config.step) *
+            this.config.column_width;
+        this.$container.scrollLeft = old_scroll_left + shift;
+        return shift;
+    }
+
+    /**
+     * Horizontal scroll step in px per frame for a pointer at clientX: grows towards the
+     * container edge, maximal beyond it, negative to the left, 0 outside the edge zones.
+     */
+    get_auto_scroll_speed(clientX) {
+        const zone = 50;
+        const max_speed = 20;
+        const { left, right } = this.$container.getBoundingClientRect();
+        const width = Math.min(zone, (right - left) / 4);
+
+        if (clientX < left + width) {
+            const ratio = Math.min((left + width - clientX) / width, 1);
+            return -Math.ceil(ratio * max_speed);
+        }
+        if (clientX > right - width) {
+            const ratio = Math.min((clientX - (right - width)) / width, 1);
+            return Math.ceil(ratio * max_speed);
+        }
+        return 0;
+    }
+
     get_svg_x(e) {
         return e.clientX - this.$svg.getBoundingClientRect().left;
     }
@@ -1453,12 +1531,84 @@ export default class Gantt {
             });
         }
 
+        // returns true if the date range was extended (and the chart re-rendered)
+        const handle_move = (e) => {
+            apply_drag(e);
+
+            const shift = this.extend_dates_for_bars(bars);
+            if (shift === null) {
+                return false;
+            }
+            x_on_start += shift;
+            bars = bars.map((bar) => this.get_bar(bar.task.id)).filter(Boolean);
+            bars.forEach((bar) => {
+                const $bar = bar.$bar;
+                $bar.ox = $bar.getX();
+                $bar.oy = $bar.getY();
+                $bar.owidth = $bar.getWidth();
+                $bar.finaldx = 0;
+            });
+            if (is_resizing_left || is_resizing_right) {
+                this.get_bar(parent_bar_id)
+                    ?.group.querySelector(
+                        is_resizing_left ? '.handle.left' : '.handle.right',
+                    )
+                    ?.classList.add('visible');
+            }
+            apply_drag(e);
+            return true;
+        };
+
+        let last_move_event = null;
+        let auto_scroll_frame = null;
+
+        const stop_auto_scroll = () => {
+            if (auto_scroll_frame) cancelAnimationFrame(auto_scroll_frame);
+            auto_scroll_frame = null;
+            last_move_event = null;
+        };
+
+        // scrolls while the pointer rests near/beyond the container edge; the bar follows via handle_move
+        const auto_scroll = () => {
+            auto_scroll_frame = null;
+            if (
+                !action_in_progress() ||
+                !last_move_event ||
+                !bars.some(({ $bar }) => $bar.finaldx)
+            ) {
+                return;
+            }
+            const speed = this.get_auto_scroll_speed(last_move_event.clientX);
+            if (!speed || (speed < 0 && drag_clamped)) return;
+
+            const old_scroll_left = this.$container.scrollLeft;
+            this.$container.scrollLeft += speed;
+            const scrolled = this.$container.scrollLeft !== old_scroll_left;
+            const extended = handle_move(last_move_event);
+            if (scrolled || extended) {
+                auto_scroll_frame = requestAnimationFrame(auto_scroll);
+            }
+        };
+
         // on document, so the drag continues while the pointer is outside the svg (e.g. over the sticky header)
         this.add_document_listener('mousemove', (e) => {
             if (!action_in_progress()) {
                 return;
             }
-            const dx = Math.max(this.get_svg_x(e) - x_on_start, min_dx);
+            last_move_event = e;
+            handle_move(e);
+            if (!auto_scroll_frame) {
+                auto_scroll_frame = requestAnimationFrame(auto_scroll);
+            }
+        });
+
+        // true while the drag is stopped by a predecessor dependency (min_dx)
+        let drag_clamped = false;
+
+        const apply_drag = (e) => {
+            const raw_dx = this.get_svg_x(e) - x_on_start;
+            drag_clamped = raw_dx < min_dx;
+            const dx = Math.max(raw_dx, min_dx);
 
             bars.forEach((bar) => {
                 const $bar = bar.$bar;
@@ -1533,10 +1683,11 @@ export default class Gantt {
                     });
                 }
             });
-        });
+        };
 
         // on document, so a drag ending outside the svg (e.g. above the sticky header) is committed too
         this.add_document_listener('mouseup', () => {
+            stop_auto_scroll();
             is_dragging = false;
             is_resizing_left = false;
             is_resizing_right = false;
